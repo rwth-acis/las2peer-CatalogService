@@ -75,7 +75,8 @@ public class CatalogService extends RESTService {
 	public void createOrUpdateServiceEntry(String name, String version, String github, String frontend,
 			String description) throws AgentNotKnownException, StorageException, CryptoException, L2pSecurityException,
 			SerializationException {
-		updateServiceCatalogReal(name, version, github, frontend, description);
+		CatalogServiceEntry entry = new CatalogServiceEntry(name, version, github, frontend, description);
+		updateServiceCatalogReal(entry);
 	}
 
 	/**
@@ -178,19 +179,9 @@ public class CatalogService extends RESTService {
 		public Response postServiceEntry(@PathParam("serviceName") String serviceName, String contentJsonString) {
 			try {
 				CatalogService service = (CatalogService) Context.getCurrent().getService();
-				Envelope envelope = Context.getCurrent().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
-				Object content = envelope.getContent(service.getAgent());
-				if (content instanceof ServiceCatalog) {
-					ServiceCatalog catalog = (ServiceCatalog) content;
-					CatalogServiceEntry entry = CatalogServiceEntry.createFromJsonString(contentJsonString);
-					catalog.addServiceEntry(entry);
-					Envelope updated = Context.getCurrent().createEnvelope(envelope, catalog);
-					Context.getCurrent().storeEnvelope(updated, service.getAgent());
-					return Response.ok("Catalog updated.", MediaType.TEXT_PLAIN).build();
-				} else {
-					throw new SerializationException("This is not an " + ServiceCatalog.class.getCanonicalName()
-							+ ", but an " + content.getClass().getCanonicalName());
-				}
+				CatalogServiceEntry entry = CatalogServiceEntry.createFromJsonString(contentJsonString);
+				service.updateServiceCatalogReal(entry);
+				return Response.ok("Catalog updated.", MediaType.TEXT_PLAIN).build();
 			} catch (Exception e) {
 				logger.log(Level.SEVERE, "Could not update service catalog!", e);
 				return Response.status(Status.INTERNAL_SERVER_ERROR)
@@ -204,10 +195,8 @@ public class CatalogService extends RESTService {
 	// real service methods
 	////////////////////////////////////////////////////////////////////////////////////////
 
-	private void updateServiceCatalogReal(String name, String version, String github, String frontend,
-			String description) throws StorageException, AgentNotKnownException, CryptoException, L2pSecurityException,
-			SerializationException {
-		CatalogServiceEntry entry = new CatalogServiceEntry(name, version, github, frontend, description);
+	private void updateServiceCatalogReal(CatalogServiceEntry entry) throws StorageException, AgentNotKnownException,
+			CryptoException, L2pSecurityException, SerializationException {
 		Envelope toStore;
 		try {
 			Envelope envelope = getContext().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
@@ -229,13 +218,17 @@ public class CatalogService extends RESTService {
 
 	private ServiceCatalog fetchServiceCatalogReal() throws StorageException, AgentNotKnownException, CryptoException,
 			L2pSecurityException, SerializationException {
-		Envelope envelope = getContext().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
-		Object content = envelope.getContent(getAgent());
-		if (content instanceof ServiceCatalog) {
-			return (ServiceCatalog) content;
-		} else {
-			throw new SerializationException("This is not an " + ServiceCatalog.class.getCanonicalName() + ", but an "
-					+ content.getClass().getCanonicalName());
+		try {
+			Envelope envelope = getContext().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
+			Object content = envelope.getContent(getAgent());
+			if (content instanceof ServiceCatalog) {
+				return (ServiceCatalog) content;
+			} else {
+				throw new SerializationException("This is not an " + ServiceCatalog.class.getCanonicalName()
+						+ ", but an " + content.getClass().getCanonicalName());
+			}
+		} catch (ArtifactNotFoundException e) {
+			return new ServiceCatalog();
 		}
 	}
 
