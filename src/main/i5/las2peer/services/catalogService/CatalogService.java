@@ -16,16 +16,15 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import i5.las2peer.api.Context;
-import i5.las2peer.api.exceptions.ArtifactNotFoundException;
-import i5.las2peer.api.exceptions.StorageException;
+import i5.las2peer.api.ServiceException;
+import i5.las2peer.api.persistency.Envelope;
+import i5.las2peer.api.persistency.EnvelopeAccessDeniedException;
+import i5.las2peer.api.persistency.EnvelopeNotFoundException;
+import i5.las2peer.api.persistency.EnvelopeOperationFailedException;
 import i5.las2peer.logging.L2pLogger;
-import i5.las2peer.p2p.AgentNotKnownException;
-import i5.las2peer.persistency.Envelope;
 import i5.las2peer.restMapper.RESTService;
 import i5.las2peer.restMapper.annotations.ServicePath;
-import i5.las2peer.security.L2pSecurityException;
-import i5.las2peer.tools.CryptoException;
-import i5.las2peer.tools.SerializationException;
+import i5.las2peer.serialization.SerializationException;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.Contact;
 import io.swagger.annotations.Info;
@@ -66,15 +65,13 @@ public class CatalogService extends RESTService {
 	 * @param github
 	 * @param frontend
 	 * @param description
-	 * @throws SerializationException
-	 * @throws L2pSecurityException
-	 * @throws CryptoException
-	 * @throws StorageException
-	 * @throws AgentNotKnownException
+	 * @throws EnvelopeAccessDeniedException
+	 * @throws EnvelopeOperationFailedException
+	 * @throws ServiceException
 	 */
 	public void createOrUpdateServiceEntry(String name, String version, String github, String frontend,
-			String description) throws AgentNotKnownException, StorageException, CryptoException, L2pSecurityException,
-			SerializationException {
+			String description)
+			throws EnvelopeAccessDeniedException, EnvelopeOperationFailedException, ServiceException {
 		CatalogServiceEntry entry = new CatalogServiceEntry(name, version, github, frontend, description);
 		updateServiceCatalogReal(entry);
 	}
@@ -83,14 +80,12 @@ public class CatalogService extends RESTService {
 	 * This method is designed to be used with RMI calls to this service. It uses only default types and classes.
 	 * 
 	 * @return Returns the catalog as Map or {@code null} on failure.
-	 * @throws SerializationException
-	 * @throws L2pSecurityException
-	 * @throws CryptoException
-	 * @throws StorageException
-	 * @throws AgentNotKnownException
+	 * @throws EnvelopeAccessDeniedException
+	 * @throws EnvelopeOperationFailedException
+	 * @throws ServiceException
 	 */
-	public Map<String, Map<String, Object>> fetchServiceCatalog() throws AgentNotKnownException, StorageException,
-			CryptoException, L2pSecurityException, SerializationException {
+	public Map<String, Map<String, Object>> fetchServiceCatalog()
+			throws EnvelopeAccessDeniedException, EnvelopeOperationFailedException, ServiceException {
 		return fetchServiceCatalogReal().toMap();
 	}
 
@@ -121,11 +116,10 @@ public class CatalogService extends RESTService {
 		 * @return Returns the complete catalog as JSON formatted String.
 		 */
 		@GET
-		@Path("/")
 		@Produces(MediaType.APPLICATION_JSON)
 		public Response getServiceCatalog() {
 			try {
-				CatalogService service = (CatalogService) Context.getCurrent().getService();
+				CatalogService service = (CatalogService) Context.get().getService();
 				ServiceCatalog catalog = service.fetchServiceCatalogReal();
 				return Response.ok(catalog.toJSONString(), MediaType.APPLICATION_JSON).build();
 			} catch (Exception e) {
@@ -147,14 +141,14 @@ public class CatalogService extends RESTService {
 		@Produces(MediaType.TEXT_PLAIN)
 		public Response deleteServiceEntry(@PathParam("serviceName") String serviceName) {
 			try {
-				CatalogService service = (CatalogService) Context.getCurrent().getService();
-				Envelope envelope = Context.getCurrent().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
-				Object content = envelope.getContent(service.getAgent());
+				CatalogService service = (CatalogService) Context.get().getService();
+				Envelope envelope = Context.get().requestEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, service.getAgent());
+				Object content = envelope.getContent();
 				if (content instanceof ServiceCatalog) {
 					ServiceCatalog catalog = (ServiceCatalog) content;
 					catalog.removeServiceEntry(serviceName);
-					Envelope updated = Context.getCurrent().createEnvelope(envelope, catalog);
-					Context.getCurrent().storeEnvelope(updated, service.getAgent());
+					envelope.setContent(catalog);
+					Context.get().storeEnvelope(envelope, service.getAgent());
 					return Response.ok("Catalog updated.", MediaType.TEXT_PLAIN).build();
 				} else {
 					throw new SerializationException("This is not an " + ServiceCatalog.class.getCanonicalName()
@@ -178,7 +172,7 @@ public class CatalogService extends RESTService {
 		@Produces(MediaType.TEXT_PLAIN)
 		public Response postServiceEntry(@PathParam("serviceName") String serviceName, String contentJsonString) {
 			try {
-				CatalogService service = (CatalogService) Context.getCurrent().getService();
+				CatalogService service = (CatalogService) Context.get().getService();
 				CatalogServiceEntry entry = CatalogServiceEntry.createFromJsonString(contentJsonString);
 				service.updateServiceCatalogReal(entry);
 				return Response.ok("Catalog updated.", MediaType.TEXT_PLAIN).build();
@@ -195,39 +189,40 @@ public class CatalogService extends RESTService {
 	// real service methods
 	////////////////////////////////////////////////////////////////////////////////////////
 
-	private void updateServiceCatalogReal(CatalogServiceEntry entry) throws StorageException, AgentNotKnownException,
-			CryptoException, L2pSecurityException, SerializationException {
-		Envelope toStore;
+	private void updateServiceCatalogReal(CatalogServiceEntry entry)
+			throws EnvelopeAccessDeniedException, EnvelopeOperationFailedException, ServiceException {
+		Envelope envelope;
+		ServiceCatalog catalog;
 		try {
-			Envelope envelope = getContext().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
-			Serializable content = envelope.getContent(getAgent());
+			envelope = Context.get().requestEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, getAgent());
+			Serializable content = envelope.getContent();
 			if (content instanceof ServiceCatalog) {
-				((ServiceCatalog) content).addServiceEntry(entry);
-				toStore = getContext().createEnvelope(envelope, content);
+				catalog = ((ServiceCatalog) content);
 			} else {
-				throw new SerializationException("This is not an " + ServiceCatalog.class.getCanonicalName()
-						+ ", but an " + content.getClass().getCanonicalName());
+				throw new ServiceException("This is not an " + ServiceCatalog.class.getCanonicalName() + ", but an "
+						+ content.getClass().getCanonicalName());
 			}
-		} catch (ArtifactNotFoundException e) {
-			ServiceCatalog catalog = new ServiceCatalog();
-			catalog.addServiceEntry(entry);
-			toStore = getContext().createEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, catalog, getAgent());
+		} catch (EnvelopeNotFoundException e) {
+			envelope = Context.get().createEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, getAgent());
+			catalog = new ServiceCatalog();
 		}
-		getContext().storeEnvelope(toStore, getAgent());
+		catalog.addServiceEntry(entry);
+		envelope.setContent(catalog);
+		Context.get().storeEnvelope(envelope, getAgent());
 	}
 
-	private ServiceCatalog fetchServiceCatalogReal() throws StorageException, AgentNotKnownException, CryptoException,
-			L2pSecurityException, SerializationException {
+	private ServiceCatalog fetchServiceCatalogReal()
+			throws EnvelopeAccessDeniedException, EnvelopeOperationFailedException, ServiceException {
 		try {
-			Envelope envelope = getContext().fetchEnvelope(SERVICE_CATALOG_ENVELOPE_NAME);
-			Object content = envelope.getContent(getAgent());
+			Envelope envelope = Context.get().requestEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, getAgent());
+			Object content = envelope.getContent();
 			if (content instanceof ServiceCatalog) {
 				return (ServiceCatalog) content;
 			} else {
-				throw new SerializationException("This is not an " + ServiceCatalog.class.getCanonicalName()
-						+ ", but an " + content.getClass().getCanonicalName());
+				throw new ServiceException("This is not an " + ServiceCatalog.class.getCanonicalName() + ", but an "
+						+ content.getClass().getCanonicalName());
 			}
-		} catch (ArtifactNotFoundException e) {
+		} catch (EnvelopeNotFoundException e) {
 			return new ServiceCatalog();
 		}
 	}

@@ -10,10 +10,10 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import i5.las2peer.api.p2p.ServiceNameVersion;
 import i5.las2peer.p2p.PastryNodeImpl;
-import i5.las2peer.p2p.ServiceNameVersion;
-import i5.las2peer.security.ServiceAgent;
-import i5.las2peer.security.UserAgent;
+import i5.las2peer.security.ServiceAgentImpl;
+import i5.las2peer.security.UserAgentImpl;
 import i5.las2peer.services.catalogService.CatalogService;
 import i5.las2peer.testing.MockAgentFactory;
 import i5.las2peer.testing.TestSuite;
@@ -47,16 +47,16 @@ public class CatalogServiceTest {
 
 			PastryNodeImpl firstNode = nodes.get(0);
 			// start service on first node
-			ServiceAgent serviceAgent = ServiceAgent.createServiceAgent(nameVersion, "testtest");
-			System.out.println("Generated test service agent has id " + serviceAgent.getId());
-			serviceAgent.unlockPrivateKey("testtest");
+			ServiceAgentImpl serviceAgent = ServiceAgentImpl.createServiceAgent(nameVersion, "testtest");
+			System.out.println("Generated test service agent has id " + serviceAgent.getIdentifier());
+			serviceAgent.unlock("testtest");
 			firstNode.storeAgent(serviceAgent);
 			firstNode.registerReceiver(serviceAgent);
 
 			// create service entry using second node
 			PastryNodeImpl secondNode = nodes.get(1);
-			UserAgent adam = MockAgentFactory.getAdam();
-			adam.unlockPrivateKey("adamspass");
+			UserAgentImpl adam = MockAgentFactory.getAdam();
+			adam.unlock("adamspass");
 			secondNode.storeAgent(adam);
 			secondNode.registerReceiver(adam);
 			secondNode.invoke(adam, nameVersion, "createOrUpdateServiceEntry",
@@ -65,8 +65,8 @@ public class CatalogServiceTest {
 
 			// fetch service catalog using third node
 			PastryNodeImpl thirdNode = nodes.get(2);
-			UserAgent eve = MockAgentFactory.getEve();
-			eve.unlockPrivateKey("evespass");
+			UserAgentImpl eve = MockAgentFactory.getEve();
+			eve.unlock("evespass");
 			thirdNode.storeAgent(eve);
 			thirdNode.registerReceiver(eve);
 			Serializable result2 = thirdNode.invoke(eve, nameVersion, "fetchServiceCatalog", new Serializable[] {});

@@ -1,6 +1,6 @@
 <project name="las2peer-Catalog-Service" default="jar" basedir="." xmlns:ivy="antlib:org.apache.ivy.ant">
 
-	<property name="core.version" value="0.6.7" />
+	<property name="core.version" value="0.7.1" />
 
 	<property name="service.name" value="i5.las2peer.services.catalogService" />
 	<property name="service.class" value="CatalogService" />
@@ -103,8 +103,8 @@
 			<fileset dir="${tmp.classes}" />
 			<zipgroupfileset dir="${tmp.bundle}" />
 			<manifest>
-				<attribute name="las2peer-service-name" value="${service.name}" />
-				<attribute name="las2peer-service-version" value="${service.version}" />
+				<attribute name="Library-SymbolicName" value="${service.name}" />
+				<attribute name="Library-Version" value="${service.version}" />
 			</manifest>
 		</jar>
 	</target>
