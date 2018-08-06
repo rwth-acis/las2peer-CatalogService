@@ -17,6 +17,7 @@ import javax.ws.rs.core.Response.Status;
 
 import i5.las2peer.api.Context;
 import i5.las2peer.api.ServiceException;
+import i5.las2peer.api.logging.MonitoringEvent;
 import i5.las2peer.api.persistency.Envelope;
 import i5.las2peer.api.persistency.EnvelopeAccessDeniedException;
 import i5.las2peer.api.persistency.EnvelopeNotFoundException;
@@ -30,6 +31,8 @@ import io.swagger.annotations.Contact;
 import io.swagger.annotations.Info;
 import io.swagger.annotations.License;
 import io.swagger.annotations.SwaggerDefinition;
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
 
 /**
  * las2peer Catalog Service
@@ -174,7 +177,20 @@ public class CatalogService extends RESTService {
 			try {
 				CatalogService service = (CatalogService) Context.get().getService();
 				CatalogServiceEntry entry = CatalogServiceEntry.createFromJsonString(contentJsonString);
-				service.updateServiceCatalogReal(entry);
+				String r = service.updateServiceCatalogReal(entry);
+				JSONParser p = new JSONParser(JSONParser.MODE_PERMISSIVE);
+				JSONObject obj = new JSONObject();
+				JSONObject attributes = new JSONObject();
+				obj.put("functionName", "postServiceEntry");
+				obj.put("serviceAlias", "catalogservice");
+				obj.put("uid", Context.getCurrent().getMainAgent().getIdentifier());
+				attributes.put("serviceName", serviceName);
+				attributes.put("body", p.parse(contentJsonString));
+				attributes.put("result", "Hey, a service was " + r + ": <" + entry.getFrontend() + "|" + entry.getName()
+						+ "@" + entry.getVersion() + ">:\n\n" + entry.getDescription());
+				obj.put("attributes", attributes);
+				Context.get().monitorEvent(MonitoringEvent.SERVICE_CUSTOM_MESSAGE_1, obj.toJSONString());
+
 				return Response.ok("Catalog updated.", MediaType.TEXT_PLAIN).build();
 			} catch (Exception e) {
 				logger.log(Level.SEVERE, "Could not update service catalog!", e);
@@ -189,15 +205,17 @@ public class CatalogService extends RESTService {
 	// real service methods
 	////////////////////////////////////////////////////////////////////////////////////////
 
-	private void updateServiceCatalogReal(CatalogServiceEntry entry)
+	private String updateServiceCatalogReal(CatalogServiceEntry entry)
 			throws EnvelopeAccessDeniedException, EnvelopeOperationFailedException, ServiceException {
 		Envelope envelope;
 		ServiceCatalog catalog;
+		String result = "";
 		try {
 			envelope = Context.get().requestEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, getAgent());
 			Serializable content = envelope.getContent();
 			if (content instanceof ServiceCatalog) {
 				catalog = ((ServiceCatalog) content);
+				result = "updated";
 			} else {
 				throw new ServiceException("This is not an " + ServiceCatalog.class.getCanonicalName() + ", but an "
 						+ content.getClass().getCanonicalName());
@@ -205,10 +223,12 @@ public class CatalogService extends RESTService {
 		} catch (EnvelopeNotFoundException e) {
 			envelope = Context.get().createEnvelope(SERVICE_CATALOG_ENVELOPE_NAME, getAgent());
 			catalog = new ServiceCatalog();
+			result = "added";
 		}
 		catalog.addServiceEntry(entry);
 		envelope.setContent(catalog);
 		Context.get().storeEnvelope(envelope, getAgent());
+		return result;
 	}
 
 	private ServiceCatalog fetchServiceCatalogReal()
